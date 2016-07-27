@@ -1,0 +1,32 @@
+{
+	"ImportPath": "github.com/tuenti/haproxy-docker-wrapper",
+	"GoVersion": "go1.6",
+	"GodepVersion": "v74",
+	"Deps": [
+		{
+			"ImportPath": "gopkg.in/mcuadros/go-syslog.v2",
+			"Comment": "v2.2.0",
+			"Rev": "d3055b9994b88519219253c3d4d4b0fead2abc94"
+		},
+		{
+			"ImportPath": "gopkg.in/mcuadros/go-syslog.v2/format",
+			"Comment": "v2.2.0",
+			"Rev": "d3055b9994b88519219253c3d4d4b0fead2abc94"
+		},
+		{
+			"ImportPath": "gopkg.in/mcuadros/go-syslog.v2/internal/syslogparser",
+			"Comment": "v2.2.0",
+			"Rev": "d3055b9994b88519219253c3d4d4b0fead2abc94"
+		},
+		{
+			"ImportPath": "gopkg.in/mcuadros/go-syslog.v2/internal/syslogparser/rfc3164",
+			"Comment": "v2.2.0",
+			"Rev": "d3055b9994b88519219253c3d4d4b0fead2abc94"
+		},
+		{
+			"ImportPath": "gopkg.in/mcuadros/go-syslog.v2/internal/syslogparser/rfc5424",
+			"Comment": "v2.2.0",
+			"Rev": "d3055b9994b88519219253c3d4d4b0fead2abc94"
+		}
+	]
+}
