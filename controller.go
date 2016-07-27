@@ -15,87 +15,51 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
-	"net/url"
-	"strings"
+	"net/http"
 )
 
 type Controller struct {
-	socketPath string
-	haproxy    *HaproxyServer
+	address string
+	haproxy *HaproxyServer
 
 	done     bool
 	listener net.Listener
 }
 
-func NewController(socketPath string, haproxy *HaproxyServer) *Controller {
+func NewController(address string, haproxy *HaproxyServer) *Controller {
 	return &Controller{
-		socketPath: socketPath,
-		haproxy:    haproxy,
+		address: address,
+		haproxy: haproxy,
 	}
-}
-
-func (c *Controller) handle(connection net.Conn) {
-	defer connection.Close()
-	r := bufio.NewReader(connection)
-	d, err := ioutil.ReadAll(r)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	command := strings.Trim(string(d), " \n")
-	switch command {
-	case "reload":
-		if err := c.haproxy.Reload(); err != nil {
-			log.Printf("Couldn't reload: %v\n", err)
-		}
-	default:
-		log.Printf("Unknown command: %s\n", command)
-	}
-}
-
-func (c *Controller) listen() error {
-	u, err := url.Parse(c.socketPath)
-	if err != nil {
-		return fmt.Errorf("Couldn't parse control socket")
-	}
-	if u.Scheme == "" {
-		u = &url.URL{Scheme: "unix", Opaque: c.socketPath}
-	}
-
-	var address string
-	switch u.Scheme {
-	case "unix":
-		address = u.Opaque
-	case "tcp", "udp":
-		address = u.Host
-	}
-
-	listener, err := net.Listen(u.Scheme, address)
-	c.listener = listener
-	return err
 }
 
 func (c *Controller) Run() error {
-	if err := c.listen(); err != nil {
+	listener, err := net.Listen("tcp", c.address)
+	if err != nil {
 		return err
 	}
-	log.Printf("Controller listening on '%s'\n", c.socketPath)
+	c.listener = listener
+	log.Printf("Controller listening on '%s'\n", c.address)
 
-	for {
-		fd, err := c.listener.Accept()
-		if err != nil {
-			if c.done {
-				return nil
-			}
-			return fmt.Errorf("Accept error: %v", err)
+	handler := http.NewServeMux()
+	handler.HandleFunc("/reload", func(w http.ResponseWriter, req *http.Request) {
+		if err := c.haproxy.Reload(); err != nil {
+			msg := fmt.Sprintf("Couldn't reload: %v\n", err)
+			log.Println(msg)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
 		}
-		go c.handle(fd)
+		fmt.Fprintf(w, "OK")
+	})
+
+	err = http.Serve(c.listener, handler)
+	if err != nil && !c.done {
+		return fmt.Errorf("Controller error: %v", err)
 	}
+	return nil
 }
 
 func (c *Controller) Stop() error {

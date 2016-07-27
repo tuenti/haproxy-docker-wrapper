@@ -26,13 +26,13 @@ import (
 var version = "dev"
 
 func main() {
-	var haproxyPath, haproxyPIDFile, haproxyConfigFile, controlSocketFile string
+	var haproxyPath, haproxyPIDFile, haproxyConfigFile, controlAddress string
 	var syslogPort int
 	var showVersion bool
 	flag.IntVar(&syslogPort, "syslog-port", 514, "Port for embedded syslog server")
 	flag.StringVar(&haproxyPath, "haproxy", "/usr/local/sbin/haproxy", "Path to haproxy binary")
 	flag.StringVar(&haproxyPIDFile, "haproxy-pidfile", "/var/run/haproxy.pid", "Pidfile for haproxy")
-	flag.StringVar(&controlSocketFile, "control-socket", "unix:/var/run/haproxyctl.sock", "Socket file for control commands")
+	flag.StringVar(&controlAddress, "control-address", "127.0.0.1:15000", "HTTP port for controller commands")
 	flag.StringVar(&haproxyConfigFile, "haproxy-config", "/usr/local/etc/haproxy/haproxy.cfg", "Path to configuration file for haproxy")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 	flag.Parse()
@@ -57,7 +57,7 @@ func main() {
 	done := make(chan os.Signal)
 	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
 
-	controller := NewController(controlSocketFile, haproxy)
+	controller := NewController(controlAddress, haproxy)
 
 	go func() {
 		for {

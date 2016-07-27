@@ -43,7 +43,6 @@ func (s *HaproxyServer) buildCommand(reload bool) *exec.Cmd {
 	if reload && s.command != nil && s.command.Process != nil {
 		args = append(args, "-sf", strconv.Itoa(s.command.Process.Pid))
 	}
-	fmt.Println("****", args)
 	cmd := exec.Command(s.path, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stdout
