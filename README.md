@@ -1,6 +1,7 @@
-= haproxy-docker-wrapper
+haproxy-docker-wrapper
+======================
 
-This repository contains the code for a wrapper with this features:
+This repository contains the code for a wrapper with these features:
 
 * Embedded syslog server to redirect haproxy logs to standard output
 * Unix socket to control haproxy reloads
@@ -8,7 +9,8 @@ This repository contains the code for a wrapper with this features:
 It also includes a Dockerfile to extend official haproxy dockers with
 this wrapper.
 
-== Why?
+Why?
+----
 
 When trying to deploy haproxy in docker, you may face some recurrent problems:
 
