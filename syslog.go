@@ -15,6 +15,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 
@@ -41,7 +42,7 @@ func (s *SyslogServer) Start() error {
 	bindAddress := fmt.Sprintf("127.0.0.1:%d", s.port)
 
 	s.server = syslog.NewServer()
-	s.server.SetFormat(syslog.RFC5424)
+	s.server.SetFormat(syslog.Automatic)
 	s.server.SetHandler(handler)
 
 	if err := s.server.ListenUDP(bindAddress); err != nil {
@@ -55,7 +56,13 @@ func (s *SyslogServer) Start() error {
 
 	go func(channel syslog.LogPartsChannel) {
 		for logParts := range channel {
-			log.Println(logParts)
+			if content, ok := logParts["content"]; ok {
+				log.Println(content)
+			} else if d, err := json.Marshal(logParts); err == nil {
+				log.Println(d)
+			} else {
+				log.Println(logParts)
+			}
 		}
 	}(channel)
 
