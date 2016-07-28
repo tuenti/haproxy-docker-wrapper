@@ -38,3 +38,17 @@ When trying to deploy haproxy in docker, you may face some recurrent problems:
   container is quite complex. Not using sidecar and including the software
   managing the configuration in the same container makes any update in this
   software to require also a full restart of haproxy.
+
+Credits & Contact
+-----------------
+
+`haproxy-docker-wrapper` was created by [Tuenti Technologies S.L.](http://github.com/tuenti)
+
+You can follow Tuenti engineering team on Twitter [@tuentieng](http://twitter.com/tuentieng).
+
+License
+-------
+
+`haproxy-docker-wrapper` is available under the Apache License, Version 2.0. See LICENSE file
+for more info.
+
