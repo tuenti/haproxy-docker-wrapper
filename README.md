@@ -1,13 +1,28 @@
 haproxy-docker-wrapper
 ======================
 
-This repository contains the code for a wrapper with these features:
+This repository contains the code for an haproxy wrapper with these features:
 
 * Embedded syslog server to redirect haproxy logs to standard output
-* Unix socket to control haproxy reloads
+* HTTP entry point to trigger haproxy configuration reloads
 
 It also includes a Dockerfile to extend official haproxy dockers with
 this wrapper.
+
+Usage
+-----
+
+Start the wrapper passing as arguments the configuration needed for your
+environment, the defaults play well with the official haproxy docker image and
+the included Dockerfile uses this image as base.
+
+Configuration directory is exposed as a volume, sidecar container should use
+this volume. Both containers should also be in the same network namespace, so
+it can reach the control entry point without needing to expose it beyond a
+local interface.
+
+To trigger a configuration reload, send an HTTP GET request to /reload in the
+control entry point (http://127.0.0.1:15000/reload by default).
 
 Why?
 ----
