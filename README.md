@@ -24,6 +24,8 @@ local interface.
 To trigger a configuration reload, send an HTTP GET request to /reload in the
 control entry point (http://127.0.0.1:15000/reload by default).
 
+Haproxy must be configured in *daemon* mode.
+
 Why?
 ----
 
