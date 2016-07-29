@@ -26,8 +26,6 @@ import (
 	"time"
 )
 
-var reloadTimeout = 15 * time.Second
-
 type HaproxyServer struct {
 	path, pidFile, configFile string
 }
