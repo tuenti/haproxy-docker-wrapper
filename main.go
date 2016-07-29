@@ -21,9 +21,25 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 var version = "dev"
+var configTimeout = 5 * time.Minute
+
+func watchHaproxyStart(haproxy *HaproxyServer) chan bool {
+	started := make(chan bool)
+	go func() {
+		for {
+			if haproxy.IsRunning() {
+				started <- true
+				return
+			}
+			<-time.After(1 * time.Second)
+		}
+	}()
+	return started
+}
 
 func main() {
 	var haproxyPath, haproxyPIDFile, haproxyConfigFile, controlAddress string
@@ -50,7 +66,15 @@ func main() {
 
 	haproxy := NewHaproxyServer(haproxyPath, haproxyPIDFile, haproxyConfigFile)
 	if err := haproxy.Start(); err != nil {
-		log.Fatalf("Couldn't start haproxy: %v\n", err)
+		log.Println("Couldn't start haproxy: ", err)
+		log.Println("Will wait for valid configuration")
+		go func() {
+			select {
+			case <-watchHaproxyStart(haproxy):
+			case <-time.After(configTimeout):
+				log.Fatalf("Timeout while waiting for haproxy to start")
+			}
+		}()
 	}
 	defer haproxy.Stop()
 

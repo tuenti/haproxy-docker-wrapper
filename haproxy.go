@@ -16,9 +16,13 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
+	"syscall"
 	"time"
 )
 
@@ -26,8 +30,6 @@ var reloadTimeout = 15 * time.Second
 
 type HaproxyServer struct {
 	path, pidFile, configFile string
-
-	command *exec.Cmd
 }
 
 func NewHaproxyServer(path, pidFile, configFile string) *HaproxyServer {
@@ -40,8 +42,8 @@ func NewHaproxyServer(path, pidFile, configFile string) *HaproxyServer {
 
 func (s *HaproxyServer) buildCommand(reload bool) *exec.Cmd {
 	args := []string{"-f", s.configFile, "-p", s.pidFile}
-	if reload && s.command != nil && s.command.Process != nil {
-		args = append(args, "-sf", strconv.Itoa(s.command.Process.Pid))
+	if reload && s.IsRunning() {
+		args = append(args, "-sf", strconv.Itoa(s.Pid()))
 	}
 	cmd := exec.Command(s.path, args...)
 	cmd.Stdout = os.Stdout
@@ -49,48 +51,76 @@ func (s *HaproxyServer) buildCommand(reload bool) *exec.Cmd {
 	return cmd
 }
 
+func (s *HaproxyServer) Pid() int {
+	b, err := ioutil.ReadFile(s.pidFile)
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.Trim(string(b), " \n"))
+	if err != nil {
+		return 0
+	}
+	return pid
+}
+
+func (s *HaproxyServer) Signal(signal os.Signal) error {
+	p, err := os.FindProcess(s.Pid())
+	if err != nil {
+		return err
+	}
+	return p.Signal(signal)
+}
+
+func (s *HaproxyServer) IsRunning() bool {
+	err := s.Signal(syscall.Signal(0))
+	return err == nil
+}
+
+func (s *HaproxyServer) Kill() error {
+	p, err := os.FindProcess(s.Pid())
+	if err != nil {
+		return err
+	}
+	return p.Kill()
+}
+
 func (s *HaproxyServer) Start() error {
-	if s.command != nil {
+	if s.IsRunning() {
 		return fmt.Errorf("Server already started")
 	}
 	cmd := s.buildCommand(false)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	s.command = cmd
-	return nil
+	return cmd.Wait()
 }
 
 func (s *HaproxyServer) Stop() error {
-	if s.command == nil || s.command.Process == nil {
+	if !s.IsRunning() {
 		return fmt.Errorf("Server not started")
 	}
-	err := s.command.Process.Kill()
+	err := s.Kill()
 	if err != nil {
 		return fmt.Errorf("Couldn't kill process: %v", err)
 	}
-	err = s.command.Wait()
-	s.command = nil
-	return err
+	return nil
 }
 
 func (s *HaproxyServer) Reload() error {
-	if s.command == nil || s.command.Process == nil {
-		return fmt.Errorf("Server not started")
+	if !s.IsRunning() {
+		log.Println("Server not started trying to start...")
+		return s.Start()
 	}
+	currentPid := s.Pid()
+	log.Println("Reloading haproxy with pid", currentPid)
+
 	cmd := s.buildCommand(true)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	current := make(chan error)
-	go func() {
-		current <- cmd.Wait()
-	}()
-	select {
-	case err := <-current:
-		s.command = cmd
-		return err
-	case <-time.After(reloadTimeout):
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("Haproxy couldn't reload configuration: %v", err)
 	}
-	return fmt.Errorf("Server couldn't be reloaded")
+	log.Println("Haproxy reloaded with pid", s.Pid())
+	return nil
 }
