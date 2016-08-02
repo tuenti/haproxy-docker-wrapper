@@ -16,10 +16,10 @@ Start the wrapper passing as arguments the configuration needed for your
 environment, the defaults play well with the official haproxy docker image and
 the included Dockerfile uses this image as base.
 
-Configuration directory is exposed as a volume, sidecar container should use
-this volume. Both containers should also be in the same network namespace, so
-it can reach the control entry point without needing to expose it beyond a
-local interface.
+Configuration directory is exposed as a volume. Sidecar container in charge of
+generating the configuration should use this volume. Both containers should
+also be in the same network namespace, so it can reach the control entry point
+without needing to expose it beyond a local interface.
 
 To trigger a configuration reload, send an HTTP GET request to /reload in the
 control entry point (http://127.0.0.1:15000/reload by default).
@@ -37,9 +37,10 @@ When trying to deploy haproxy in docker, you may face some recurrent problems:
   handle these logs.
 * Configuration reload in haproxy needs access to the pid namespace, to the
   pid file and to the configuration file. Providing all this from a sidecar
-  container is quite complex. Not using sidecar and including the software
-  managing the configuration in the same container makes any update in this
-  software to require also a full restart of haproxy.
+  container like [kube2lb](https://github.com/tuenti/kube2lb/tree/master/examples)
+  is quite complex. Not using sidecar and including the software managing the
+  configuration in the same container makes any update in this software to
+  require also a full restart of haproxy.
 
 Credits & Contact
 -----------------
