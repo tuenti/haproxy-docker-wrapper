@@ -118,6 +118,18 @@ func (s *HaproxyServer) Reload() error {
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("Haproxy couldn't reload configuration: %v", err)
 	}
+
+	go func() {
+		p, err := os.FindProcess(currentPid)
+		if err != nil {
+			// This shouldn't happen in UNIX systems
+			log.Println(err)
+			return
+		}
+		p.Wait()
+		log.Printf("Old process with pid %d finished\n", currentPid)
+	}()
+
 	log.Println("Haproxy reloaded with pid", s.Pid())
 	return nil
 }
