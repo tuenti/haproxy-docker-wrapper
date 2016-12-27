@@ -23,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
 type HaproxyServer struct {
