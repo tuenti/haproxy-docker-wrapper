@@ -4,7 +4,7 @@ PACKAGE := github.com/tuenti/haproxy-docker-wrapper
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
 all:
-	docker run -v $(ROOT_DIR):/go/src/$(PACKAGE) -w /go/src/$(PACKAGE) -it --rm golang:1.6.3 go build -ldflags "-X main.version=$(VERSION)"
+	docker run -v $(ROOT_DIR):/go/src/$(PACKAGE) -w /go/src/$(PACKAGE) -it --rm golang:1.7.4 go build -ldflags "-X main.version=$(VERSION)"
 
 release:
 	@if echo $(VERSION) | grep -q "dev$$" ; then echo Set VERSION variable to release; exit 1; fi
