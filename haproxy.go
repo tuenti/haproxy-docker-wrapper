@@ -15,17 +15,27 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
+	"sync"
 	"syscall"
 )
 
+const (
+	STATE_IDLE = iota
+	STATE_RELOADING
+	STATE_WAITING
+)
+
 type HaproxyServer struct {
+	sync.Mutex
+	reloading sync.Mutex
+	state     int
+
 	path, pidFile, configFile string
 }
 
@@ -39,8 +49,15 @@ func NewHaproxyServer(path, pidFile, configFile string) *HaproxyServer {
 
 func (s *HaproxyServer) buildCommand(reload bool) *exec.Cmd {
 	args := []string{"-f", s.configFile, "-p", s.pidFile}
+
 	if reload && s.IsRunning() {
-		args = append(args, "-sf", strconv.Itoa(s.Pid()))
+		pids, _ := s.Pids()
+		pidArgs := make([]string, len(pids))
+		for i := range pids {
+			pidArgs[i] = strconv.Itoa(pids[i])
+		}
+		args = append(args, "-sf")
+		args = append(args, pidArgs...)
 	}
 	cmd := exec.Command(s.path, args...)
 	cmd.Stdout = os.Stdout
@@ -48,16 +65,37 @@ func (s *HaproxyServer) buildCommand(reload bool) *exec.Cmd {
 	return cmd
 }
 
+func (s *HaproxyServer) Pids() ([]int, error) {
+	var pids []int
+
+	file, err := os.Open(s.pidFile)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't open pidfile %s", s.pidFile)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Split(bufio.ScanWords)
+	for scanner.Scan() {
+		text := scanner.Text()
+		pid, err := strconv.Atoi(text)
+		if err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
 func (s *HaproxyServer) Pid() int {
-	b, err := ioutil.ReadFile(s.pidFile)
+	pids, err := s.Pids()
 	if err != nil {
+		fmt.Println(err)
 		return 0
 	}
-	pid, err := strconv.Atoi(strings.Trim(string(b), " \n"))
-	if err != nil {
+	if len(pids) == 0 {
 		return 0
 	}
-	return pid
+	return pids[0]
 }
 
 func (s *HaproxyServer) Signal(signal os.Signal) error {
@@ -103,15 +141,44 @@ func (s *HaproxyServer) Stop() error {
 	return nil
 }
 
-func (s *HaproxyServer) Reload() error {
-	if !s.IsRunning() {
-		log.Println("Server not started trying to start...")
-		return s.Start()
+func (s *HaproxyServer) requestReload() bool {
+	s.Lock()
+	defer s.Unlock()
+	switch s.state {
+	case STATE_IDLE:
+		s.state = STATE_RELOADING
+	case STATE_RELOADING:
+		s.state = STATE_WAITING
+	case STATE_WAITING:
+		return false
 	}
-	currentPid := s.Pid()
-	log.Println("Reloading haproxy with pid", currentPid)
+	return true
+}
 
-	cmd := s.buildCommand(true)
+func (s *HaproxyServer) finishReload() {
+	s.Lock()
+	defer s.Unlock()
+	switch s.state {
+	case STATE_IDLE:
+	case STATE_RELOADING:
+		s.state = STATE_IDLE
+	case STATE_WAITING:
+		s.state = STATE_RELOADING
+	}
+}
+
+func (s *HaproxyServer) Reload() error {
+	if !s.requestReload() {
+		return nil
+	}
+	defer s.finishReload()
+
+	s.reloading.Lock()
+	defer s.reloading.Unlock()
+
+	currentPids, _ := s.Pids()
+
+	cmd := s.buildCommand(s.IsRunning())
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -119,16 +186,17 @@ func (s *HaproxyServer) Reload() error {
 		return fmt.Errorf("Haproxy couldn't reload configuration: %v", err)
 	}
 
-	go func() {
-		p, err := os.FindProcess(currentPid)
+	for _, pid := range currentPids {
+		p, err := os.FindProcess(pid)
 		if err != nil {
 			// This shouldn't happen in UNIX systems
-			log.Println(err)
-			return
+			return err
 		}
-		p.Wait()
-		log.Printf("Old process with pid %d finished\n", currentPid)
-	}()
+		if _, err := p.Wait(); err != nil {
+			return fmt.Errorf("Cannot wait for old haproxy: %v", err)
+		}
+		log.Printf("Old process with pid %d finished\n", pid)
+	}
 
 	log.Println("Haproxy reloaded with pid", s.Pid())
 	return nil
