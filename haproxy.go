@@ -190,12 +190,15 @@ func (s *HaproxyServer) Reload() error {
 		p, err := os.FindProcess(pid)
 		if err != nil {
 			// This shouldn't happen in UNIX systems
-			return err
+			log.Printf("os.FindProcess(%d) failed, this shouldn't happen: %v\n", pid, err)
+			continue
 		}
-		if _, err := p.Wait(); err != nil {
-			return fmt.Errorf("Cannot wait for old haproxy: %v", err)
-		}
-		log.Printf("Old process with pid %d finished\n", pid)
+		go func() {
+			if _, err := p.Wait(); err != nil {
+				log.Printf("Cannot wait for old haproxy: %v\n", err)
+			}
+			log.Printf("Old process with pid %d finished\n", p.Pid)
+		}()
 	}
 
 	log.Println("Haproxy reloaded with pid", s.Pid())
