@@ -42,14 +42,16 @@ func watchHaproxyStart(haproxy *HaproxyServer) chan bool {
 }
 
 func main() {
-	var haproxyPath, haproxyPIDFile, haproxyConfigFile, controlAddress string
-	var syslogPort int
+	var haproxyPath, haproxyPIDFile, haproxyConfigFile, controlAddress, netQueueIps string
+	var syslogPort, nfQueueNumber uint
 	var showVersion bool
-	flag.IntVar(&syslogPort, "syslog-port", 514, "Port for embedded syslog server")
+	flag.UintVar(&syslogPort, "syslog-port", 514, "Port for embedded syslog server")
 	flag.StringVar(&haproxyPath, "haproxy", "/usr/local/sbin/haproxy", "Path to haproxy binary")
 	flag.StringVar(&haproxyPIDFile, "haproxy-pidfile", "/var/run/haproxy.pid", "Pidfile for haproxy")
 	flag.StringVar(&controlAddress, "control-address", "127.0.0.1:15000", "HTTP port for controller commands")
 	flag.StringVar(&haproxyConfigFile, "haproxy-config", "/usr/local/etc/haproxy/haproxy.cfg", "Path to configuration file for haproxy")
+	flag.UintVar(&nfQueueNumber, "nf-queue-number", 0, "Netfilter queue number to retain connections during reload")
+	flag.StringVar(&netQueueIps, "net-queue-ips", "", "Comma-separated list of IPs where connections will be retained during reload")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 	flag.Parse()
 
@@ -57,6 +59,12 @@ func main() {
 		fmt.Println(version)
 		os.Exit(0)
 	}
+
+	ips, err := ipArgs(netQueueIps)
+	if err != nil {
+		log.Fatalf("Expected comma-separated list of IPs: %v", err)
+	}
+	netQueue = NewNetfilterQueue(nfQueueNumber, ips)
 
 	syslog := NewSyslogServer(syslogPort)
 	if err := syslog.Start(); err != nil {

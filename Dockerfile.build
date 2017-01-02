@@ -1,0 +1,5 @@
+FROM golang:1.7.4
+
+RUN apt-get update \
+	&& apt-get install -y libnetfilter-queue-dev \
+	&& apt-get clean && rm -fr /var/lib/apt/lists/*

@@ -178,12 +178,22 @@ func (s *HaproxyServer) Reload() error {
 
 	currentPids, _ := s.Pids()
 
-	cmd := s.buildCommand(s.IsRunning())
-	if err := cmd.Start(); err != nil {
+	err := func() error {
+		cmd := s.buildCommand(s.IsRunning())
+
+		netQueue.Capture()
+		defer netQueue.Release()
+
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+		if err := cmd.Wait(); err != nil {
+			return fmt.Errorf("Haproxy couldn't reload configuration: %v", err)
+		}
+		return nil
+	}()
+	if err != nil {
 		return err
-	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("Haproxy couldn't reload configuration: %v", err)
 	}
 
 	for _, pid := range currentPids {

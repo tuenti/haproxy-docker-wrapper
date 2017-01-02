@@ -1,8 +1,22 @@
 {
 	"ImportPath": "github.com/tuenti/haproxy-docker-wrapper",
-	"GoVersion": "go1.6",
+	"GoVersion": "go1.7",
 	"GodepVersion": "v74",
 	"Deps": [
+		{
+			"ImportPath": "github.com/AkihiroSuda/go-netfilter-queue",
+			"Rev": "9e490039f5f6b93aa6f47f0bd1962737ba0c7b6d"
+		},
+		{
+			"ImportPath": "github.com/google/gopacket",
+			"Comment": "v1.1.12-29-g64e82e7",
+			"Rev": "64e82e7d0584a6c30c5dfc9684777b5b5ea717df"
+		},
+		{
+			"ImportPath": "github.com/google/gopacket/layers",
+			"Comment": "v1.1.12-29-g64e82e7",
+			"Rev": "64e82e7d0584a6c30c5dfc9684777b5b5ea717df"
+		},
 		{
 			"ImportPath": "gopkg.in/mcuadros/go-syslog.v2",
 			"Comment": "v2.2.0",

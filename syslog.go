@@ -23,11 +23,11 @@ import (
 )
 
 type SyslogServer struct {
-	port   int
+	port   uint
 	server *syslog.Server
 }
 
-func NewSyslogServer(port int) *SyslogServer {
+func NewSyslogServer(port uint) *SyslogServer {
 	return &SyslogServer{port: port}
 }
 
