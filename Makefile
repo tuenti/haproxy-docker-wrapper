@@ -1,4 +1,4 @@
-VERSION := 1.2.1
+VERSION := 1.2.2
 DOCKER_TAG := haproxy-docker-wrapper:$(VERSION)_1.6.2
 PACKAGE := github.com/tuenti/haproxy-docker-wrapper
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
