@@ -29,6 +29,8 @@ import (
 
 const maxPacketsInQueue = 65536
 
+const packetTimeout = 100 * time.Millisecond
+
 const iptablesAddFlag = "-A"
 const iptablesDeleteFlag = "-D"
 
@@ -57,17 +59,21 @@ type NetQueue interface {
 }
 
 type NetfilterQueue struct {
-	sync.Mutex
 	Number uint
 	IPs    []net.IP
+
+	capture, capturing, release chan struct{}
 }
 
 func NewNetfilterQueue(n uint, ips []net.IP) *NetfilterQueue {
 	q := NetfilterQueue{
-		Number: n,
-		IPs:    ips,
+		Number:    n,
+		IPs:       ips,
+		capture:   make(chan struct{}, 1),
+		capturing: make(chan struct{}, 1),
+		release:   make(chan struct{}, 1),
 	}
-	q.loop()
+	go q.loop()
 	return &q
 }
 
@@ -92,43 +98,62 @@ func (q *NetfilterQueue) iptables(flag string) {
 }
 
 func (q *NetfilterQueue) loop() {
+	if len(q.IPs) == 0 {
+		return
+	}
 	queue, err := nfqueue.NewNFQueue(uint16(q.Number), maxPacketsInQueue, nfqueue.NF_DEFAULT_PACKET_SIZE)
 	if err != nil {
 		panic(err)
 	}
+	defer queue.Close()
 
+	accepting := true
+	accept := sync.NewCond(&sync.Mutex{})
+	accept.L.Lock()
 	go func() {
-		defer queue.Close()
 		count := 0
 		for {
 			select {
 			case packet := <-queue.GetPackets():
-				q.Lock()
+				for !accepting {
+					accept.Wait()
+				}
 				count++
 				packet.SetVerdict(nfqueue.NF_ACCEPT)
-				q.Unlock()
-			case <-time.After(1 * time.Second):
+			case <-time.After(packetTimeout):
 				if count > 0 {
-					log.Printf("Delayed %d packets during reload\n", count)
+					log.Printf("Delayed %d packages during reloads\n", count)
 					count = 0
 				}
 			}
 		}
 	}()
+
+	for {
+		<-q.capture
+		accepting = false
+		func() {
+			q.iptables(iptablesAddFlag)
+			defer q.iptables(iptablesDeleteFlag)
+			q.capturing <- struct{}{}
+			<-q.release
+		}()
+		accepting = true
+		accept.Signal()
+	}
 }
 
 func (q *NetfilterQueue) Capture() {
 	if len(q.IPs) == 0 {
 		return
 	}
-	q.Lock()
-	q.iptables(iptablesAddFlag)
+	q.capture <- struct{}{}
+	<-q.capturing
 }
 
 func (q *NetfilterQueue) Release() {
 	if len(q.IPs) == 0 {
 		return
 	}
-	q.iptables(iptablesDeleteFlag)
-	q.Unlock()
+	q.release <- struct{}{}
 }
