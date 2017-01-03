@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 )
 
 const (
@@ -190,6 +191,8 @@ func (s *HaproxyServer) Reload() error {
 		if err := cmd.Wait(); err != nil {
 			return fmt.Errorf("Haproxy couldn't reload configuration: %v", err)
 		}
+		// At this point haproxy doesn't seem able to accept connections, wait a little bit
+		<-time.After(10 * time.Millisecond)
 		return nil
 	}()
 	if err != nil {
