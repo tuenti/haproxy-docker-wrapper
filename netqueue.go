@@ -16,8 +16,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -33,6 +35,8 @@ const packetTimeout = 100 * time.Millisecond
 
 const iptablesAddFlag = "-A"
 const iptablesDeleteFlag = "-D"
+
+const procNetfilterQueuePath = "/proc/net/netfilter/nfnetlink_queue"
 
 var netQueue NetQueue
 
@@ -85,7 +89,7 @@ func (q *NetfilterQueue) iptables(flag string) {
 		}
 		args := []string{
 			flag,
-			"INPUT", "-j", "NFQUEUE",
+			"INPUT", "-j", "NFQUEUE", "-w",
 			"-p", "tcp", "--syn", "--destination", ip.String(),
 			"--queue-num", strconv.Itoa(int(q.Number)),
 		}
@@ -156,4 +160,82 @@ func (q *NetfilterQueue) Release() {
 		return
 	}
 	q.release <- struct{}{}
+}
+
+type ProcNetfilterQueue struct {
+	ID           uint
+	PortID       uint
+	Waiting      uint
+	CopyMode     uint
+	CopyRange    uint
+	QueueDropped uint
+	UserDropped  uint
+	LastSeq      uint
+	One          uint
+}
+
+type ProcNetfilter struct {
+	sync.RWMutex
+
+	queues map[uint]ProcNetfilterQueue
+}
+
+func (pn *ProcNetfilter) Get(id uint) (ProcNetfilterQueue, bool) {
+	pn.RLock()
+	defer pn.RUnlock()
+
+	q, found := pn.queues[id]
+	return q, found
+}
+
+func (pn *ProcNetfilter) Update() error {
+	pn.Lock()
+	defer pn.Unlock()
+
+	f, err := os.Open(procNetfilterQueuePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	seen := make(map[uint]bool)
+
+	var id, portID, waiting, copyMode, copyRange, queueDropped, userDropped, lastSeq, one uint
+	for {
+		_, err := fmt.Fscanf(f, "%d %d %d %d %d %d %d %d %d\n",
+			&id, &portID, &waiting, &copyMode, &copyRange, &queueDropped, &userDropped, &lastSeq, &one)
+		seen[id] = true
+		pn.queues[id] = ProcNetfilterQueue{
+			ID:           id,
+			PortID:       portID,
+			Waiting:      waiting,
+			CopyMode:     copyMode,
+			CopyRange:    copyRange,
+			QueueDropped: queueDropped,
+			UserDropped:  userDropped,
+			LastSeq:      lastSeq,
+			One:          one,
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+	for k := range pn.queues {
+		if _, found := seen[k]; !found {
+			delete(pn.queues, k)
+		}
+	}
+	return nil
+}
+
+func ReadProcNetfilter() (*ProcNetfilter, error) {
+	pn := &ProcNetfilter{queues: make(map[uint]ProcNetfilterQueue)}
+	err := pn.Update()
+	if err != nil {
+		return nil, err
+	}
+	return pn, nil
 }
