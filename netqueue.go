@@ -111,11 +111,18 @@ func (q *NetfilterQueue) loop() {
 	}
 	defer queue.Close()
 
+	procNf, err := ReadProcNetfilter()
+	if err != nil {
+		panic(err)
+	}
+
 	accepting := true
 	accept := sync.NewCond(&sync.Mutex{})
 	accept.L.Lock()
 	go func() {
 		count := 0
+		lastQueueDropped := uint(0)
+		lastUserDropped := uint(0)
 		for {
 			select {
 			case packet := <-queue.GetPackets():
@@ -128,6 +135,23 @@ func (q *NetfilterQueue) loop() {
 				if count > 0 {
 					log.Printf("Delayed %d packages during reloads\n", count)
 					count = 0
+				}
+				err := procNf.Update()
+				if err != nil {
+					log.Printf("Couldn't update netfilter queue stats: %v\n", err)
+					break
+				}
+				if qData, found := procNf.Get(q.Number); found {
+					if qData.QueueDropped > lastQueueDropped {
+						log.Printf("Dropped %d packages due to full queue\n",
+							qData.QueueDropped-lastQueueDropped)
+						lastQueueDropped = qData.QueueDropped
+					}
+					if qData.UserDropped > lastUserDropped {
+						log.Printf("Dropped %d packages before reaching user space\n",
+							qData.UserDropped-lastUserDropped)
+						lastUserDropped = qData.UserDropped
+					}
 				}
 			}
 		}
