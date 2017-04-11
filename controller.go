@@ -52,7 +52,7 @@ func (c *Controller) Run() error {
 			http.Error(w, msg, http.StatusInternalServerError)
 			return
 		}
-		fmt.Fprintf(w, "OK")
+		fmt.Fprintf(w, "OK\n")
 	})
 
 	err = http.Serve(c.listener, handler)

@@ -179,6 +179,7 @@ func (s *HaproxyServer) Reload() error {
 
 	currentPids, _ := s.Pids()
 
+	start := time.Now()
 	err := func() error {
 		cmd := s.buildCommand(s.IsRunning())
 
@@ -191,13 +192,12 @@ func (s *HaproxyServer) Reload() error {
 		if err := cmd.Wait(); err != nil {
 			return fmt.Errorf("Haproxy couldn't reload configuration: %v", err)
 		}
-		// At this point haproxy doesn't seem able to accept connections, wait a little bit
-		<-time.After(10 * time.Millisecond)
 		return nil
 	}()
 	if err != nil {
 		return err
 	}
+	log.Printf("Reload took %s", time.Since(start))
 
 	for _, pid := range currentPids {
 		p, err := os.FindProcess(pid)
