@@ -230,3 +230,24 @@ func BenchmarkProcNetfilterUpdateAndRead(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkNetfilterQueueCaptureReleaseOverload(b *testing.B) {
+	lo, _ := netlink.LinkByName("lo")
+	addr, _ := netlink.ParseAddr("127.0.1.100/32")
+	err := netlink.AddrAdd(lo, addr)
+	if err != nil {
+		b.Fatal("couldn't change network configuration: ", err)
+	}
+	defer netlink.AddrDel(lo, addr)
+
+	queueId := newQueueId()
+	nfQueue := NewNetQueue(queueId, []net.IP{addr.IP})
+
+	// TODO: Send packets during the capture
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		nfQueue.Capture()
+		nfQueue.Release()
+	}
+	b.StopTimer()
+}
