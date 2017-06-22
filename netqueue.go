@@ -83,6 +83,7 @@ type netfilterQueue struct {
 	cancel context.CancelFunc
 }
 
+// Factory method to obtain a netqueue depending on IP configuration
 func NewNetQueue(n uint, ips []net.IP) NetQueue {
 	if len(ips) == 0 {
 		return &dummyNetQueue{}
@@ -104,6 +105,8 @@ func NewNetQueue(n uint, ips []net.IP) NetQueue {
 	return &q
 }
 
+// Call to iptables to configure the rule to send packets
+// to the queue
 func (q *netfilterQueue) iptables(flag string) {
 	for _, ip := range q.IPs {
 		if ip.To4() == nil {
@@ -126,6 +129,9 @@ func (q *netfilterQueue) iptables(flag string) {
 
 func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 	defer queue.Close()
+	defer close(q.capture)
+	defer close(q.capturing)
+	defer close(q.release)
 
 	procNf, err := ReadProcNetfilter()
 	if err != nil {
@@ -151,6 +157,7 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 	}()
 
 	for {
+		// Control locks
 		select {
 		case <-q.capture:
 		case <-ctx.Done():
@@ -169,6 +176,7 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 			continue
 		}
 
+		// Accept all waiting packets according to information in proc fs
 		count := 0
 		for qData, found := procNf.Get(q.Number); found && qData.Waiting > 0; {
 			for i := uint(0); i < qData.Waiting; i++ {
@@ -183,6 +191,7 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 			}
 		}
 
+		// Show stats
 		if count > 0 {
 			log.Printf("Delayed %d packages during reloads\n", count)
 			count = 0
@@ -212,6 +221,9 @@ func (q *netfilterQueue) Release() {
 	q.release <- struct{}{}
 }
 
+// Canceling the context will finish loop() and close
+// all queues and channels, after calling this method
+// this object shouldn't be used anymore
 func (q *netfilterQueue) Stop() {
 	q.cancel()
 }
