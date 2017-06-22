@@ -135,7 +135,8 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 	lastQueueDropped := uint(0)
 	lastUserDropped := uint(0)
 
-	packets := make(chan nfqueue.NFPacket)
+	// Buffered channel, we don't want to block writes on it
+	packets := make(chan nfqueue.NFPacket, nfqueue.NF_DEFAULT_PACKET_SIZE)
 	go func() {
 		for {
 			// We have to be reading packets before start capturing,
