@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -28,6 +29,10 @@ import (
 
 	nfqueue "github.com/tuenti/go-netfilter-queue"
 )
+
+func init() {
+	nfqueue.PacketReceiveTimeout = 10 * time.Millisecond
+}
 
 const maxPacketsInQueue = 65536
 
@@ -60,18 +65,22 @@ func ipArgs(arg string) ([]net.IP, error) {
 type NetQueue interface {
 	Capture()
 	Release()
+	Stop()
 }
 
 type dummyNetQueue struct{}
 
 func (*dummyNetQueue) Capture() {}
 func (*dummyNetQueue) Release() {}
+func (*dummyNetQueue) Stop()    {}
 
 type netfilterQueue struct {
 	Number uint
 	IPs    []net.IP
 
 	capture, capturing, release chan struct{}
+
+	cancel context.CancelFunc
 }
 
 func NewNetQueue(n uint, ips []net.IP) NetQueue {
@@ -81,15 +90,17 @@ func NewNetQueue(n uint, ips []net.IP) NetQueue {
 	q := netfilterQueue{
 		Number:    n,
 		IPs:       ips,
-		capture:   make(chan struct{}, 1),
-		capturing: make(chan struct{}, 1),
-		release:   make(chan struct{}, 1),
+		capture:   make(chan struct{}),
+		capturing: make(chan struct{}),
+		release:   make(chan struct{}),
 	}
 	queue, err := nfqueue.NewNFQueue(uint16(q.Number), maxPacketsInQueue, nfqueue.NF_DEFAULT_PACKET_SIZE)
 	if err != nil {
 		panic(err)
 	}
-	go q.loop(queue)
+	ctx, cancel := context.WithCancel(context.Background())
+	q.cancel = cancel
+	go q.loop(queue, ctx)
 	return &q
 }
 
@@ -113,7 +124,7 @@ func (q *netfilterQueue) iptables(flag string) {
 	}
 }
 
-func (q *netfilterQueue) loop(queue *nfqueue.NFQueue) {
+func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 	defer queue.Close()
 
 	procNf, err := ReadProcNetfilter()
@@ -124,19 +135,26 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue) {
 	lastQueueDropped := uint(0)
 	lastUserDropped := uint(0)
 
-	// TODO: Get a context to finish these loops
 	packets := make(chan nfqueue.NFPacket)
 	go func() {
 		for {
 			// We have to be reading packets before start capturing,
 			// or they are lost
-			packet := <-queue.GetPackets()
-			packets <- packet
+			select {
+			case packet := <-queue.GetPackets():
+				packets <- packet
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
 	for {
-		<-q.capture
+		select {
+		case <-q.capture:
+		case <-ctx.Done():
+			return
+		}
 		func() {
 			q.iptables(iptablesAddFlag)
 			defer q.iptables(iptablesDeleteFlag)
@@ -191,6 +209,10 @@ func (q *netfilterQueue) Capture() {
 
 func (q *netfilterQueue) Release() {
 	q.release <- struct{}{}
+}
+
+func (q *netfilterQueue) Stop() {
+	q.cancel()
 }
 
 type ProcNetfilterQueue struct {

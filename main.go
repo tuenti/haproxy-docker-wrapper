@@ -65,6 +65,7 @@ func main() {
 		log.Fatalf("Expected comma-separated list of IPs: %v", err)
 	}
 	netQueue = NewNetQueue(nfQueueNumber, ips)
+	defer netQueue.Stop()
 
 	syslog := NewSyslogServer(syslogPort)
 	if err := syslog.Start(); err != nil {
