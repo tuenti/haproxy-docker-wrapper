@@ -81,7 +81,11 @@ const (
 	NF_STOP   Verdict = 5
 
 	NF_DEFAULT_PACKET_SIZE uint32 = 0xffff
+
+	NF_DEFAULT_TIMEOUT = 100 * time.Microsecond
 )
+
+var PacketReceiveTimeout = NF_DEFAULT_TIMEOUT
 
 var theTable = make(map[uint32]*chan NFPacket, 0)
 var theTabeLock sync.RWMutex
@@ -171,7 +175,7 @@ func go_callback(queueId C.int, data *C.uchar, len C.int, idx uint32) Verdict {
 	case (*cb) <- p:
 		v := <-p.verdictChannel
 		return v
-	default:
+	case <-time.After(PacketReceiveTimeout):
 		fmt.Fprintf(os.Stderr, "Dropping, unexpectedly due to no recv, idx=%d\n", idx)
 		return NF_DROP
 	}

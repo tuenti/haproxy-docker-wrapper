@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	nfqueue "github.com/AkihiroSuda/go-netfilter-queue"
+	nfqueue "github.com/tuenti/go-netfilter-queue"
 )
 
 const maxPacketsInQueue = 65536
