@@ -36,8 +36,6 @@ func init() {
 
 const maxPacketsInQueue = 65536
 
-const packetTimeout = 100 * time.Millisecond
-
 const iptablesAddFlag = "-A"
 const iptablesDeleteFlag = "-D"
 
