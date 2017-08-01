@@ -108,7 +108,7 @@ func NewNetQueue(n uint, ips []net.IP) NetQueue {
 func (q *netfilterQueue) iptables(flag string) {
 	for _, ip := range q.IPs {
 		if ip.To4() == nil {
-			log.Println("Only IPv4 addresses supported: %s found", ip.String())
+			log.Printf("Only IPv4 addresses supported: %s found", ip.String())
 			continue
 		}
 		args := []string{
