@@ -17,6 +17,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -25,6 +27,10 @@ import (
 
 	"github.com/vishvananda/netlink"
 )
+
+func init() {
+	log.SetOutput(ioutil.Discard)
+}
 
 var nextQueueId = uint(0)
 
