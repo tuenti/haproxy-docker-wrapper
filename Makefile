@@ -9,7 +9,7 @@ all:
 
 test:
 	docker build -f Dockerfile.build -t haproxy-docker-wrapper-builder .
-	docker run -v $(ROOT_DIR):/go/src/$(PACKAGE) -w /go/src/$(PACKAGE) -it --rm --cap-add=NET_ADMIN haproxy-docker-wrapper-builder go test -cover
+	docker run -v $(ROOT_DIR):/go/src/$(PACKAGE) -w /go/src/$(PACKAGE) -it --rm --cap-add=NET_ADMIN haproxy-docker-wrapper-builder go test -cover $(TEST_ARGS)
 
 release:
 	@if echo $(VERSION) | grep -q "dev$$" ; then echo Set VERSION variable to release; exit 1; fi

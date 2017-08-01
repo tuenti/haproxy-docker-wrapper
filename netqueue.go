@@ -15,6 +15,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -26,12 +27,14 @@ import (
 	"sync"
 	"time"
 
-	nfqueue "github.com/AkihiroSuda/go-netfilter-queue"
+	nfqueue "github.com/tuenti/go-netfilter-queue"
 )
 
-const maxPacketsInQueue = 65536
+func init() {
+	nfqueue.PacketReceiveTimeout = 10 * time.Millisecond
+}
 
-const packetTimeout = 100 * time.Millisecond
+const maxPacketsInQueue = 65536
 
 const iptablesAddFlag = "-A"
 const iptablesDeleteFlag = "-D"
@@ -60,28 +63,49 @@ func ipArgs(arg string) ([]net.IP, error) {
 type NetQueue interface {
 	Capture()
 	Release()
+	Stop()
 }
 
-type NetfilterQueue struct {
+type dummyNetQueue struct{}
+
+func (*dummyNetQueue) Capture() {}
+func (*dummyNetQueue) Release() {}
+func (*dummyNetQueue) Stop()    {}
+
+type netfilterQueue struct {
 	Number uint
 	IPs    []net.IP
 
 	capture, capturing, release chan struct{}
+
+	cancel context.CancelFunc
 }
 
-func NewNetfilterQueue(n uint, ips []net.IP) *NetfilterQueue {
-	q := NetfilterQueue{
+// Factory method to obtain a netqueue depending on IP configuration
+func NewNetQueue(n uint, ips []net.IP) NetQueue {
+	if len(ips) == 0 {
+		return &dummyNetQueue{}
+	}
+	q := netfilterQueue{
 		Number:    n,
 		IPs:       ips,
-		capture:   make(chan struct{}, 1),
-		capturing: make(chan struct{}, 1),
-		release:   make(chan struct{}, 1),
+		capture:   make(chan struct{}),
+		capturing: make(chan struct{}),
+		release:   make(chan struct{}),
 	}
-	go q.loop()
+	queue, err := nfqueue.NewNFQueue(uint16(q.Number), maxPacketsInQueue, nfqueue.NF_DEFAULT_PACKET_SIZE)
+	if err != nil {
+		panic(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	q.cancel = cancel
+	go q.loop(queue, ctx)
 	return &q
 }
 
-func (q *NetfilterQueue) iptables(flag string) {
+// Call to iptables to configure the rule to send packets
+// to the queue
+func (q *netfilterQueue) iptables(flag string) {
 	for _, ip := range q.IPs {
 		if ip.To4() == nil {
 			log.Println("Only IPv4 addresses supported: %s found", ip.String())
@@ -101,89 +125,105 @@ func (q *NetfilterQueue) iptables(flag string) {
 	}
 }
 
-func (q *NetfilterQueue) loop() {
-	if len(q.IPs) == 0 {
-		return
-	}
-	queue, err := nfqueue.NewNFQueue(uint16(q.Number), maxPacketsInQueue, nfqueue.NF_DEFAULT_PACKET_SIZE)
-	if err != nil {
-		panic(err)
-	}
+func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 	defer queue.Close()
+	defer close(q.capture)
+	defer close(q.capturing)
+	defer close(q.release)
 
 	procNf, err := ReadProcNetfilter()
 	if err != nil {
 		panic(err)
 	}
 
-	accepting := true
-	accept := sync.NewCond(&sync.Mutex{})
-	accept.L.Lock()
+	lastQueueDropped := uint(0)
+	lastUserDropped := uint(0)
+
+	// Buffered channel, we don't want to block writes on it
+	packets := make(chan nfqueue.NFPacket, nfqueue.NF_DEFAULT_PACKET_SIZE)
 	go func() {
-		count := 0
-		lastQueueDropped := uint(0)
-		lastUserDropped := uint(0)
 		for {
+			// We have to be reading packets before start capturing,
+			// or they are lost
 			select {
 			case packet := <-queue.GetPackets():
-				for !accepting {
-					accept.Wait()
-				}
-				count++
-				packet.SetVerdict(nfqueue.NF_ACCEPT)
-			case <-time.After(packetTimeout):
-				if count > 0 {
-					log.Printf("Delayed %d packages during reloads\n", count)
-					count = 0
-				}
-				err := procNf.Update()
-				if err != nil {
-					log.Printf("Couldn't update netfilter queue stats: %v\n", err)
-					break
-				}
-				if qData, found := procNf.Get(q.Number); found {
-					if qData.QueueDropped > lastQueueDropped {
-						log.Printf("Dropped %d packages due to full queue\n",
-							qData.QueueDropped-lastQueueDropped)
-						lastQueueDropped = qData.QueueDropped
-					}
-					if qData.UserDropped > lastUserDropped {
-						log.Printf("Dropped %d packages before reaching user space\n",
-							qData.UserDropped-lastUserDropped)
-						lastUserDropped = qData.UserDropped
-					}
-				}
+				packets <- packet
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
 
 	for {
-		<-q.capture
-		accepting = false
+		// Control locks
+		select {
+		case <-q.capture:
+		case <-ctx.Done():
+			return
+		}
 		func() {
 			q.iptables(iptablesAddFlag)
 			defer q.iptables(iptablesDeleteFlag)
 			q.capturing <- struct{}{}
 			<-q.release
 		}()
-		accepting = true
-		accept.Signal()
+
+		err := procNf.Update()
+		if err != nil {
+			log.Printf("Couldn't update netfilter queue stats: %v\n", err)
+			continue
+		}
+
+		// Accept all waiting packets according to information in proc fs
+		count := 0
+		for qData, found := procNf.Get(q.Number); found && qData.Waiting > 0; {
+			for i := uint(0); i < qData.Waiting; i++ {
+				packet := <-packets
+				packet.SetVerdict(nfqueue.NF_ACCEPT)
+				count++
+			}
+			err := procNf.Update()
+			if err != nil {
+				log.Printf("Couldn't update netfilter queue stats: %v\n", err)
+				break
+			}
+		}
+
+		// Show stats
+		if count > 0 {
+			log.Printf("Delayed %d packages during reloads\n", count)
+			count = 0
+		}
+
+		if qData, found := procNf.Get(q.Number); found {
+			if qData.QueueDropped > lastQueueDropped {
+				log.Printf("Dropped %d packages due to full queue\n",
+					qData.QueueDropped-lastQueueDropped)
+				lastQueueDropped = qData.QueueDropped
+			}
+			if qData.UserDropped > lastUserDropped {
+				log.Printf("Dropped %d packages before reaching user space\n",
+					qData.UserDropped-lastUserDropped)
+				lastUserDropped = qData.UserDropped
+			}
+		}
 	}
 }
 
-func (q *NetfilterQueue) Capture() {
-	if len(q.IPs) == 0 {
-		return
-	}
+func (q *netfilterQueue) Capture() {
 	q.capture <- struct{}{}
 	<-q.capturing
 }
 
-func (q *NetfilterQueue) Release() {
-	if len(q.IPs) == 0 {
-		return
-	}
+func (q *netfilterQueue) Release() {
 	q.release <- struct{}{}
+}
+
+// Canceling the context will finish loop() and close
+// all queues and channels, after calling this method
+// this object shouldn't be used anymore
+func (q *netfilterQueue) Stop() {
+	q.cancel()
 }
 
 type ProcNetfilterQueue struct {

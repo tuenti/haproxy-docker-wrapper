@@ -26,6 +26,14 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
+var nextQueueId = uint(0)
+
+func newQueueId() uint {
+	id := nextQueueId
+	nextQueueId++
+	return id
+}
+
 func pingHTTPServer(ip net.IP, port int) (io.Closer, error) {
 	l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: ip, Port: port})
 	if err != nil {
@@ -100,9 +108,11 @@ func TestNetfilterQueue(t *testing.T) {
 	}
 	defer netlink.AddrDel(lo, addr)
 
-	queueId := uint(0)
+	queueId := newQueueId()
+	nfQueue := NewNetQueue(queueId, []net.IP{addr.IP})
+	defer nfQueue.Stop()
+
 	port := 80
-	nfQueue := NewNetfilterQueue(queueId, []net.IP{addr.IP})
 	s, err := pingHTTPServer(addr.IP, port)
 	if err != nil {
 		t.Fatal(err)
@@ -150,11 +160,9 @@ func TestNetfilterQueue(t *testing.T) {
 }
 
 func TestNetfilterQueueNoIPs(t *testing.T) {
-	queueId := uint(1)
-	nfQueue := NewNetfilterQueue(queueId, nil)
-
-	nfQueue.Capture()
-	defer nfQueue.Release()
+	queueId := newQueueId()
+	nfQueue := NewNetQueue(queueId, nil)
+	defer nfQueue.Stop()
 
 	pn, err := ReadProcNetfilter()
 	if err != nil {
@@ -177,11 +185,9 @@ func TestNetfilterQueueExists(t *testing.T) {
 	}
 	defer netlink.AddrDel(lo, addr)
 
-	queueId := uint(2)
-	nfQueue := NewNetfilterQueue(queueId, []net.IP{addr.IP})
-
-	nfQueue.Capture()
-	defer nfQueue.Release()
+	queueId := newQueueId()
+	nfQueue := NewNetQueue(queueId, []net.IP{addr.IP})
+	defer nfQueue.Stop()
 
 	pn, err := ReadProcNetfilter()
 	if err != nil {
@@ -193,4 +199,92 @@ func TestNetfilterQueueExists(t *testing.T) {
 	if !found {
 		t.Fatal("queue couldn't be found")
 	}
+}
+
+func TestNetfilterQueueStop(t *testing.T) {
+	lo, _ := netlink.LinkByName("lo")
+	addr, _ := netlink.ParseAddr("127.0.1.101/32")
+	err := netlink.AddrAdd(lo, addr)
+	if err != nil {
+		t.Fatal("couldn't change network configuration: ", err)
+	}
+	defer netlink.AddrDel(lo, addr)
+
+	queueId := newQueueId()
+	nfQueue := NewNetQueue(queueId, []net.IP{addr.IP})
+
+	pn, err := ReadProcNetfilter()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, found := pn.Get(queueId)
+	if !found {
+		t.Fatal("queue couldn't be found")
+	}
+
+	nfQueue.Stop()
+
+	for retries := 5; retries > 0; retries-- {
+		pn.Update()
+		_, found = pn.Get(queueId)
+		if !found {
+			break
+		}
+		<-time.After(100 * time.Millisecond)
+	}
+	if found {
+		t.Fatal("queue shouldn't exist after Stop")
+	}
+}
+
+func BenchmarkProcNetfilterUpdateAndRead(b *testing.B) {
+	lo, _ := netlink.LinkByName("lo")
+	addr, _ := netlink.ParseAddr("127.0.1.101/32")
+	err := netlink.AddrAdd(lo, addr)
+	if err != nil {
+		b.Fatal("couldn't change network configuration: ", err)
+	}
+	defer netlink.AddrDel(lo, addr)
+
+	queueId := newQueueId()
+	nfQueue := NewNetQueue(queueId, []net.IP{addr.IP})
+	defer nfQueue.Stop()
+
+	pn, err := ReadProcNetfilter()
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		pn.Update()
+		_, found := pn.Get(queueId)
+
+		if !found {
+			b.Fatal("queue couldn't be found")
+		}
+	}
+}
+
+func BenchmarkNetfilterQueueCaptureReleaseOverload(b *testing.B) {
+	lo, _ := netlink.LinkByName("lo")
+	addr, _ := netlink.ParseAddr("127.0.1.100/32")
+	err := netlink.AddrAdd(lo, addr)
+	if err != nil {
+		b.Fatal("couldn't change network configuration: ", err)
+	}
+	defer netlink.AddrDel(lo, addr)
+
+	queueId := newQueueId()
+	nfQueue := NewNetQueue(queueId, []net.IP{addr.IP})
+	defer nfQueue.Stop()
+
+	// TODO: Send packets during the capture
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		nfQueue.Capture()
+		nfQueue.Release()
+	}
+	b.StopTimer()
 }
