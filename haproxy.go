@@ -27,9 +27,9 @@ import (
 )
 
 const (
-	STATE_IDLE = iota
-	STATE_RELOADING
-	STATE_WAITING
+	StateIdle = iota
+	StateReloading
+	StateWaiting
 )
 
 type HaproxyServer struct {
@@ -146,11 +146,11 @@ func (s *HaproxyServer) requestReload() bool {
 	s.Lock()
 	defer s.Unlock()
 	switch s.state {
-	case STATE_IDLE:
-		s.state = STATE_RELOADING
-	case STATE_RELOADING:
-		s.state = STATE_WAITING
-	case STATE_WAITING:
+	case StateIdle:
+		s.state = StateReloading
+	case StateReloading:
+		s.state = StateWaiting
+	case StateWaiting:
 		return false
 	}
 	return true
@@ -160,11 +160,11 @@ func (s *HaproxyServer) finishReload() {
 	s.Lock()
 	defer s.Unlock()
 	switch s.state {
-	case STATE_IDLE:
-	case STATE_RELOADING:
-		s.state = STATE_IDLE
-	case STATE_WAITING:
-		s.state = STATE_RELOADING
+	case StateIdle:
+	case StateReloading:
+		s.state = StateIdle
+	case StateWaiting:
+		s.state = StateReloading
 	}
 }
 
