@@ -175,13 +175,13 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 		}
 
 		// Accept all waiting packets according to information in proc fs
-		count := 0
+		count := uint(0)
 		for qData, found := procNf.Get(q.Number); found && qData.Waiting > 0; {
 			for i := uint(0); i < qData.Waiting; i++ {
 				packet := <-packets
 				packet.SetVerdict(nfqueue.NF_ACCEPT)
-				count++
 			}
+			count += qData.Waiting
 			err := procNf.Update()
 			if err != nil {
 				log.Printf("Couldn't update netfilter queue stats: %v\n", err)
@@ -192,7 +192,6 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 		// Show stats
 		if count > 0 {
 			log.Printf("Delayed %d packages during reloads\n", count)
-			count = 0
 		}
 
 		if qData, found := procNf.Get(q.Number); found {
