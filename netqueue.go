@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	nfqueue "github.com/tuenti/go-netfilter-queue"
@@ -141,6 +142,7 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 
 	// Buffered channel, we don't want to block writes on it
 	packets := make(chan nfqueue.NFPacket, nfqueue.NF_DEFAULT_PACKET_SIZE)
+	queuedPackets := int64(0)
 	go func() {
 		for {
 			// We have to be reading packets before start capturing,
@@ -148,6 +150,7 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 			select {
 			case packet := <-queue.GetPackets():
 				packets <- packet
+				atomic.AddInt64(&queuedPackets, 1)
 			case <-ctx.Done():
 				return
 			}
@@ -175,13 +178,22 @@ func (q *netfilterQueue) loop(queue *nfqueue.NFQueue, ctx context.Context) {
 		}
 
 		// Accept all waiting packets according to information in proc fs
-		count := uint(0)
-		for qData, found := procNf.Get(q.Number); found && qData.Waiting > 0; {
-			for i := uint(0); i < qData.Waiting; i++ {
+		count := int64(0)
+		for {
+			qData, found := procNf.Get(q.Number)
+			if !found || qData.Waiting == 0 {
+				break
+			}
+			// We only trust in the number of queued packets, as the last read
+			// value for waiting packets can be outdated and we'd get locked
+			// reading from the channel
+			n := atomic.LoadInt64(&queuedPackets)
+			for i := int64(0); i < n; i++ {
 				packet := <-packets
 				packet.SetVerdict(nfqueue.NF_ACCEPT)
 			}
-			count += qData.Waiting
+			atomic.AddInt64(&queuedPackets, -n)
+			count += n
 			err := procNf.Update()
 			if err != nil {
 				log.Printf("Couldn't update netfilter queue stats: %v\n", err)

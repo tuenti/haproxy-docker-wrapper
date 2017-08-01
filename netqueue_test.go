@@ -119,43 +119,46 @@ func TestNetfilterQueue(t *testing.T) {
 	}
 	defer s.Close()
 
-	requests := uint(100)
+	// Do it multiple times to detect dead locks
+	for i := 0; i < 5; i++ {
+		requests := uint(100)
 
-	errResp := make(chan error)
-	releaseCheck := ReleasedCheck{}
-	nfQueue.Capture()
-	for i := uint(0); i < requests; i++ {
-		go func() {
-			_, err = http.Get(fmt.Sprintf("http://%s:%d/", addr.IP, port))
-			releaseCheck.FailIfNotReleased(t)
-			errResp <- err
-		}()
-	}
-
-	err = waitForQueued(queueId, requests)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	releaseCheck.Lock()
-	releaseCheck.Released = true
-	nfQueue.Release()
-	releaseCheck.Unlock()
-
-	for i := uint(0); i < requests; i++ {
-		select {
-		case e := <-errResp:
-			if e != nil {
-				t.Fatal(e)
-			}
-		case <-time.After(500 * time.Millisecond):
-			t.Fatalf("Client timeout after %d packets", i)
+		errResp := make(chan error)
+		releaseCheck := ReleasedCheck{}
+		nfQueue.Capture()
+		for i := uint(0); i < requests; i++ {
+			go func() {
+				_, err = http.Get(fmt.Sprintf("http://%s:%d/", addr.IP, port))
+				releaseCheck.FailIfNotReleased(t)
+				errResp <- err
+			}()
 		}
-	}
 
-	err = sanityCheckQueue(queueId)
-	if err != nil {
-		t.Fatal(err)
+		err = waitForQueued(queueId, requests)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		releaseCheck.Lock()
+		releaseCheck.Released = true
+		nfQueue.Release()
+		releaseCheck.Unlock()
+
+		for i := uint(0); i < requests; i++ {
+			select {
+			case e := <-errResp:
+				if e != nil {
+					t.Fatal(e)
+				}
+			case <-time.After(500 * time.Millisecond):
+				t.Fatalf("Client timeout after %d packets", i)
+			}
+		}
+
+		err = sanityCheckQueue(queueId)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
