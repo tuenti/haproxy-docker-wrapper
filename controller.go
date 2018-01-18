@@ -1,4 +1,4 @@
-// Copyright © 2016 Tuenti Technologies S.L.
+// Copyright © 2018 Tuenti Technologies S.L.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,13 +23,13 @@ import (
 
 type Controller struct {
 	address string
-	haproxy *HaproxyServer
+	haproxy HaproxyServer
 
 	done     bool
 	listener net.Listener
 }
 
-func NewController(address string, haproxy *HaproxyServer) *Controller {
+func NewController(address string, haproxy HaproxyServer) *Controller {
 	return &Controller{
 		address: address,
 		haproxy: haproxy,

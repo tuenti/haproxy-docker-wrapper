@@ -1,4 +1,4 @@
-// Copyright © 2016 Tuenti Technologies S.L.
+// Copyright © 2018 Tuenti Technologies S.L.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import (
 var version = "dev"
 var configTimeout = 5 * time.Minute
 
-func watchHaproxyStart(haproxy *HaproxyServer) chan bool {
+func watchHaproxyStart(haproxy HaproxyServer) chan bool {
 	started := make(chan bool)
 	go func() {
 		for {
@@ -42,16 +42,15 @@ func watchHaproxyStart(haproxy *HaproxyServer) chan bool {
 }
 
 func main() {
-	var haproxyPath, haproxyPIDFile, haproxyConfigFile, controlAddress, netQueueIps string
-	var syslogPort, nfQueueNumber uint
+	var haproxyPath, haproxyPIDFile, haproxyConfigFile, controlAddress, haproxyMode string
+	var syslogPort uint
 	var showVersion bool
 	flag.UintVar(&syslogPort, "syslog-port", 514, "Port for embedded syslog server")
 	flag.StringVar(&haproxyPath, "haproxy", "/usr/local/sbin/haproxy", "Path to haproxy binary")
 	flag.StringVar(&haproxyPIDFile, "haproxy-pidfile", "/var/run/haproxy.pid", "Pidfile for haproxy")
 	flag.StringVar(&controlAddress, "control-address", "127.0.0.1:15000", "HTTP port for controller commands")
 	flag.StringVar(&haproxyConfigFile, "haproxy-config", "/usr/local/etc/haproxy/haproxy.cfg", "Path to configuration file for haproxy")
-	flag.UintVar(&nfQueueNumber, "nf-queue-number", 0, "Netfilter queue number to retain connections during reload")
-	flag.StringVar(&netQueueIps, "net-queue-ips", "", "Comma-separated list of IPs where connections will be retained during reload")
+	flag.StringVar(&haproxyMode, "haproxy-mode", "master-worker", "Mode haproxy is expected to be running (one of: daemon, master-worker)")
 	flag.BoolVar(&showVersion, "version", false, "Show version")
 	flag.Parse()
 
@@ -60,20 +59,16 @@ func main() {
 		os.Exit(0)
 	}
 
-	ips, err := ipArgs(netQueueIps)
-	if err != nil {
-		log.Fatalf("Expected comma-separated list of IPs: %v", err)
-	}
-	netQueue = NewNetQueue(nfQueueNumber, ips)
-	defer netQueue.Stop()
-
 	syslog := NewSyslogServer(syslogPort)
 	if err := syslog.Start(); err != nil {
 		log.Fatalf("Couldn't start embedded syslog: %v\n", err)
 	}
 	defer syslog.Stop()
 
-	haproxy := NewHaproxyServer(haproxyPath, haproxyPIDFile, haproxyConfigFile)
+	haproxy, err := NewHaproxyServer(haproxyPath, haproxyPIDFile, haproxyConfigFile, haproxyMode)
+	if err != nil {
+		log.Fatalf("Couldn't start haproxy manager: %v", err)
+	}
 	if err := haproxy.Start(); err != nil {
 		log.Println("Couldn't start haproxy: ", err)
 		log.Println("Will wait for valid configuration")
