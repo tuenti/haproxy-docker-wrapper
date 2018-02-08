@@ -1,5 +1,7 @@
 VERSION := 1.3.3
-DOCKER_TAG := haproxy-docker-wrapper:$(VERSION)_1.8.3
+HAPROXY_VERSION := 1.8.4
+DOCKER_REPOSITORY := tuenti
+DOCKER_TAG := ${DOCKER_REPOSITORY}/haproxy-docker-wrapper:$(VERSION)_$(HAPROXY_VERSION)
 PACKAGE := github.com/tuenti/haproxy-docker-wrapper
 ROOT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 
