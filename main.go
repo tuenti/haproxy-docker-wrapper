@@ -85,7 +85,8 @@ func main() {
 	done := make(chan os.Signal)
 	signal.Notify(done, syscall.SIGTERM, syscall.SIGINT)
 
-	controller := NewController(controlAddress, haproxy)
+	validator := NewHaproxyDashC(haproxyPath, haproxyConfigFile)
+	controller := NewController(controlAddress, haproxy, validator)
 
 	go func() {
 		for {

@@ -16,6 +16,7 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 )
 
 const (
@@ -48,4 +49,33 @@ func NewHaproxyServer(path, pidFile, configFile, mode string) (HaproxyServer, er
 	default:
 		return nil, fmt.Errorf("unknown haproxy mode: %s", mode)
 	}
+}
+
+// A HaproxyConfigValidator can be used to validate haproxy's configuration
+// to ensure haproxy will be able to reload successfully.
+type HaproxyConfigValidator interface {
+	// Validate returns an error if haproxy has an unusable configuration.
+	Validate() error
+}
+
+// HaproxyDashC validates haproxy configuration by running haproxy -c.
+type HaproxyDashC struct {
+	path       string
+	configFile string
+}
+
+// NewHaproxyDashC implements HaproxyConfigValidator by running haproxy -c to
+// to validate haproxy config.
+func NewHaproxyDashC(path, configFile string) *HaproxyDashC {
+	return &HaproxyDashC{path: path, configFile: configFile}
+}
+
+// Validate returns an error if haproxy has an unusable configuration.
+func (v *HaproxyDashC) Validate() error {
+	args := []string{"-c", "-q", "-f", v.configFile}
+	command := exec.Command(v.path, args...)
+	if out, err := command.CombinedOutput(); err != nil {
+		return fmt.Errorf("%v:\n%s", err, out)
+	}
+	return nil
 }

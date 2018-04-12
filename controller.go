@@ -22,17 +22,19 @@ import (
 )
 
 type Controller struct {
-	address string
-	haproxy HaproxyServer
+	address   string
+	haproxy   HaproxyServer
+	validator HaproxyConfigValidator
 
 	done     bool
 	listener net.Listener
 }
 
-func NewController(address string, haproxy HaproxyServer) *Controller {
+func NewController(address string, haproxy HaproxyServer, validator HaproxyConfigValidator) *Controller {
 	return &Controller{
-		address: address,
-		haproxy: haproxy,
+		address:   address,
+		haproxy:   haproxy,
+		validator: validator,
 	}
 }
 
@@ -48,6 +50,15 @@ func (c *Controller) Run() error {
 	handler.HandleFunc("/reload", func(w http.ResponseWriter, req *http.Request) {
 		if err := c.haproxy.Reload(); err != nil {
 			msg := fmt.Sprintf("Couldn't reload: %v\n", err)
+			log.Println(msg)
+			http.Error(w, msg, http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, "OK\n")
+	})
+	handler.HandleFunc("/validate", func(w http.ResponseWriter, req *http.Request) {
+		if err := c.validator.Validate(); err != nil {
+			msg := fmt.Sprintf("Invalid configuration: %v\n", err)
 			log.Println(msg)
 			http.Error(w, msg, http.StatusInternalServerError)
 			return
