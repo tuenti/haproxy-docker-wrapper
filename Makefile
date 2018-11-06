@@ -1,5 +1,5 @@
 VERSION := 2.0.0
-HAPROXY_VERSION := 1.8.4
+HAPROXY_VERSION := 1.8.14
 DOCKER_REPOSITORY := tuenti
 DOCKER_TAG := ${DOCKER_REPOSITORY}/haproxy-docker-wrapper:$(VERSION)_$(HAPROXY_VERSION)
 PACKAGE := github.com/tuenti/haproxy-docker-wrapper
